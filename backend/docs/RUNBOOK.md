@@ -1,5 +1,21 @@
 # lineup24 ops runbook
 
+## Production (lineup24.ru)
+
+Server: `/opt/lineup24` on the VPS. Stack: Docker Compose + **Caddy** (HTTPS via Let’s Encrypt).
+
+```bash
+ssh root@YOUR_HOST
+cd /opt/lineup24
+git pull
+docker compose up -d --build
+docker compose ps
+```
+
+- Site: https://lineup24.ru (Caddy → frontend:3000 → `/api` rewrite → backend)
+- Secrets: `/opt/lineup24/.env` + `/opt/lineup24/backend/.env` (chmod 600, not in git)
+- DB restore example: `docker compose cp dump.dump db:/tmp/d.dump && docker compose exec -T db pg_restore -U lineup -d lineup --clean --if-exists --no-owner --no-acl /tmp/d.dump`
+
 ## Local stack (Docker — recommended)
 
 Full stack (Postgres + Redis + Nest + Next):
