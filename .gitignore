@@ -38,3 +38,8 @@ backend/pageview.json
 
 # Docker / compose overrides (local only)
 docker-compose.override.yml
+
+# DB dumps (transfer separately, never commit)
+*.dump
+*.sql.gz
+lineup.dump

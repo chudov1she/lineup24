@@ -48,9 +48,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-lineup}:${POSTGRES_PASSWORD:-lineup}@db:5432/${POSTGRES_DB:-lineup}?schema=public
       REDIS_URL: redis://redis:6379
-      # Public site URL (ngrok or localhost). Used for CORS, mail links, Platega return.
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      # false on local http; true when exposed via https://*.ngrok*
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       RUN_SEED: ${RUN_SEED:-false}
     depends_on:
@@ -75,7 +73,6 @@ services:
     build:
       context: ./frontend
       args:
-        # Relative /api → same origin (works with ngrok without rebuild)
         NEXT_PUBLIC_API_URL: /api
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         API_PROXY_TARGET: http://backend:8000
@@ -104,6 +101,24 @@ services:
       retries: 8
       start_period: 30s
 
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: project-lineup-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:
