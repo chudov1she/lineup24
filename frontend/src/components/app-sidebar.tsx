@@ -107,12 +107,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="gap-0">
         <div className="flex h-12 w-full items-center px-3 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <span className="font-heading w-full truncate text-xl font-semibold tracking-tight select-none group-data-[collapsible=icon]:hidden">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Открыть сайт"
+            className="font-heading w-full truncate text-xl font-semibold tracking-tight select-none hover:opacity-80 group-data-[collapsible=icon]:hidden"
+          >
             {BRAND.name}
-          </span>
-          <span className="font-heading hidden text-sm font-semibold tracking-tight select-none group-data-[collapsible=icon]:inline">
+          </a>
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Открыть сайт"
+            className="font-heading hidden text-sm font-semibold tracking-tight select-none hover:opacity-80 group-data-[collapsible=icon]:inline"
+          >
             24
-          </span>
+          </a>
         </div>
       </SidebarHeader>
       <SidebarContent className="gap-0">

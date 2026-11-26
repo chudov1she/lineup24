@@ -67,11 +67,11 @@ export function NavUser({
     <>
       <SidebarMenu>
         <SidebarMenuItem>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 group-data-[collapsible=icon]:justify-center">
             <SidebarMenuButton
               size="lg"
               tooltip={user.name}
-              className="min-w-0 flex-1"
+              className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"
               render={<Link href="/dashboard/settings" />}
             >
               <Avatar className="size-8 rounded-lg">
@@ -82,7 +82,7 @@ export function NavUser({
                   {initials}
                 </AvatarFallback>
               </Avatar>
-              <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+              <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {user.email}
@@ -96,7 +96,7 @@ export function NavUser({
               title="Выйти"
               disabled={busy}
               onClick={() => setConfirmOpen(true)}
-              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 disabled:opacity-50 group-data-[collapsible=icon]:hidden"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 disabled:opacity-50"
             >
               <LogOutIcon className="size-4" />
             </button>
