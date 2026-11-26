@@ -134,9 +134,24 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
   private async startPolling(token: string) {
     // Avoid conflict with a leftover webhook from a previous env.
-    await this.telegramApi(token, 'deleteWebhook', {
-      drop_pending_updates: true,
-    });
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const cleared = await this.telegramApi(token, 'deleteWebhook', {
+        drop_pending_updates: true,
+      });
+      if (cleared) {
+        this.logger.log('Telegram webhook cleared for polling mode');
+        break;
+      }
+      this.logger.warn(
+        `deleteWebhook failed (attempt ${attempt}/5) — retrying`,
+      );
+      await sleep(1_500, new AbortController().signal);
+      if (attempt === 5) {
+        this.logger.error(
+          'Could not deleteWebhook — getUpdates will 409 while webhook is set',
+        );
+      }
+    }
 
     this.abort = new AbortController();
     const signal = this.abort.signal;
