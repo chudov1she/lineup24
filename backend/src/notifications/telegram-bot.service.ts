@@ -6,6 +6,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from './notifications.service.js';
+import {
+  telegramFetch,
+  telegramProxyEnabled,
+} from './telegram-http.js';
 
 type TelegramUpdate = {
   update_id: number;
@@ -43,11 +47,18 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
 
     const mode = this.resolveMode();
+    if (mode === 'off') {
+      this.logger.log('Telegram bot disabled (TELEGRAM_MODE=off)');
+      return;
+    }
     if (mode === 'webhook') {
       await this.installWebhook(token);
       return;
     }
 
+    if (telegramProxyEnabled()) {
+      this.logger.log('Telegram API via TELEGRAM_SOCKS_PROXY');
+    }
     await this.startPolling(token);
   }
 
@@ -62,13 +73,23 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private resolveMode(): 'polling' | 'webhook' {
-    const explicit = this.config.get<string>('TELEGRAM_MODE', '').trim().toLowerCase();
-    if (explicit === 'polling' || explicit === 'webhook') {
-      return explicit;
+  private resolveMode(): 'polling' | 'webhook' | 'off' {
+    const explicit = this.config
+      .get<string>('TELEGRAM_MODE', '')
+      .trim()
+      .toLowerCase();
+    if (
+      explicit === 'polling' ||
+      explicit === 'webhook' ||
+      explicit === 'off' ||
+      explicit === 'disabled'
+    ) {
+      return explicit === 'disabled' ? 'off' : explicit;
     }
     const webhookUrl = this.config.get<string>('TELEGRAM_WEBHOOK_URL', '').trim();
     if (webhookUrl) return 'webhook';
+    // Prefer long-poll when SOCKS is configured (common for RU VPS).
+    if (telegramProxyEnabled()) return 'polling';
     const nodeEnv = this.config.get<string>('NODE_ENV', 'development');
     return nodeEnv === 'production' ? 'webhook' : 'polling';
   }
@@ -155,7 +176,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     url.searchParams.set('offset', String(this.offset));
     url.searchParams.set('allowed_updates', JSON.stringify(['message']));
 
-    const response = await fetch(url, { signal });
+    const response = await telegramFetch(url, { signal });
     if (!response.ok) {
       throw new Error(`getUpdates HTTP ${response.status}`);
     }
@@ -176,7 +197,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     body: Record<string, unknown>,
   ): Promise<boolean> {
     try {
-      const response = await fetch(
+      const response = await telegramFetch(
         `https://api.telegram.org/bot${token}/${method}`,
         {
           method: 'POST',

@@ -20,6 +20,7 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service.js'
 import type { CreateBroadcastDto } from './dto/create-broadcast.dto.js';
 import type { ListBroadcastsQueryDto } from './dto/list-broadcasts-query.dto.js';
 import type { UserEmailDto } from './dto/user-email.dto.js';
+import { telegramFetch } from './telegram-http.js';
 import {
   escapeTelegramHtml,
   telegramBold,
@@ -788,7 +789,7 @@ export class NotificationsService {
       return;
     }
 
-    const response = await fetch(
+    const response = await telegramFetch(
       `https://api.telegram.org/bot${token}/sendMessage`,
       {
         method: 'POST',
