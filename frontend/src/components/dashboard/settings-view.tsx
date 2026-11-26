@@ -134,7 +134,8 @@ export function SettingsView() {
   const [telegramUsername, setTelegramUsername] = React.useState<string | null>(
     null,
   )
-  const [botToken, setBotToken] = React.useState("")
+  const [tgDeepLink, setTgDeepLink] = React.useState<string | null>(null)
+  const [tgLinkBusy, setTgLinkBusy] = React.useState(false)
   const [sessions, setSessions] = React.useState<SessionRow[]>([])
   const [username, setUsername] = React.useState("")
   const [profileBusy, setProfileBusy] = React.useState(false)
@@ -282,27 +283,46 @@ export function SettingsView() {
     }
   }
 
-  async function bindTelegram() {
-    const token = botToken.trim()
-    if (!token) {
-      toast.add({ title: "Вставьте токен из бота", type: "info" })
-      return
-    }
+  async function loadTelegramDeepLink() {
+    setTgLinkBusy(true)
     try {
-      await notificationsApi.bindTelegram(token)
-      setBotToken("")
-      await refreshUser()
-      setTelegramLinked(true)
-      setTelegramSignals(true)
-      toast.add({ title: "Telegram привязан", type: "success" })
+      const res = await notificationsApi.createTelegramLink()
+      if (res.alreadyLinked) {
+        await refreshUser()
+        setTelegramLinked(true)
+        setTgDeepLink(null)
+        return
+      }
+      setTgDeepLink(res.deepLink)
     } catch (err) {
       toast.add({
-        title: "Не удалось привязать",
+        title: "Не удалось создать ссылку",
         description: err instanceof ApiError ? err.message : undefined,
         type: "warning",
       })
+    } finally {
+      setTgLinkBusy(false)
     }
   }
+
+  React.useEffect(() => {
+    if (!user || telegramLinked) return
+    void loadTelegramDeepLink()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per unlinked session
+  }, [user?.id, telegramLinked])
+
+  React.useEffect(() => {
+    if (telegramLinked || !tgDeepLink) return
+    const timer = window.setInterval(() => {
+      void refreshUser()
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [telegramLinked, tgDeepLink, refreshUser])
+
+  React.useEffect(() => {
+    if (!telegramLinked) return
+    setTgDeepLink(null)
+  }, [telegramLinked])
 
   async function unbindTelegram() {
     try {
@@ -747,8 +767,8 @@ export function SettingsView() {
               <div className="min-w-0">
                 <CardTitle className="font-heading">Уведомления</CardTitle>
                 <CardDescription>
-                  Куда отправлять сигналы. Telegram — после привязки токеном из
-                  бота
+                  Куда отправлять сигналы. Telegram — через QR или ссылку из
+                  настроек
                 </CardDescription>
               </div>
             </div>
@@ -845,29 +865,35 @@ export function SettingsView() {
                 <div className="grid gap-5 lg:grid-cols-[10rem_minmax(0,1fr)] lg:items-start">
                   <div className="flex flex-col items-start gap-3">
                     <div className="rounded-xl border bg-white p-2 shadow-xs">
-                      <QRCodeSVG
-                        value={TELEGRAM_BOT_URL}
-                        size={128}
-                        level="M"
-                        marginSize={1}
-                        title={`Бот @${TELEGRAM_BOT_USERNAME}`}
-                      />
+                      {tgDeepLink ? (
+                        <QRCodeSVG
+                          value={tgDeepLink}
+                          size={128}
+                          level="M"
+                          marginSize={1}
+                          title={`Привязка @${TELEGRAM_BOT_USERNAME}`}
+                        />
+                      ) : (
+                        <div className="flex size-32 items-center justify-center text-xs text-muted-foreground">
+                          {tgLinkBusy ? "…" : "QR"}
+                        </div>
+                      )}
                     </div>
                     <Button
                       size="sm"
-                      variant="outline"
                       className="rounded-full"
+                      disabled={!tgDeepLink}
                       nativeButton={false}
                       render={
                         <a
-                          href={TELEGRAM_BOT_URL}
+                          href={tgDeepLink ?? TELEGRAM_BOT_URL}
                           target="_blank"
                           rel="noreferrer"
                         />
                       }
                     >
                       <ExternalLinkIcon data-icon="inline-start" />
-                      Открыть бота
+                      Открыть Telegram
                     </Button>
                   </div>
                   <div className="flex min-w-0 flex-col gap-3">
@@ -876,33 +902,22 @@ export function SettingsView() {
                         Привязка Telegram
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        /start в боте @{TELEGRAM_BOT_USERNAME} → скопируйте
-                        токен → вставьте сюда
+                        Отсканируйте QR или нажмите кнопку — бот @{TELEGRAM_BOT_USERNAME}{" "}
+                        привяжется сам, без кода.
                       </p>
                     </div>
-                    <Field>
-                      <FieldLabel htmlFor="tg-bot-token">
-                        Токен из бота
-                      </FieldLabel>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Input
-                          id="tg-bot-token"
-                          value={botToken}
-                          placeholder="Вставьте токен"
-                          className="font-mono text-sm sm:flex-1"
-                          onChange={(event) => setBotToken(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") void bindTelegram()
-                          }}
-                        />
-                        <Button
-                          className="rounded-full"
-                          onClick={() => void bindTelegram()}
-                        >
-                          Привязать
-                        </Button>
-                      </div>
-                    </Field>
+                    <p className="text-xs text-muted-foreground">
+                      После открытия бота эта страница обновится автоматически.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-fit rounded-full"
+                      disabled={tgLinkBusy}
+                      onClick={() => void loadTelegramDeepLink()}
+                    >
+                      Обновить ссылку
+                    </Button>
                   </div>
                 </div>
               </div>

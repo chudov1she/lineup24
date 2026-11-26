@@ -601,6 +601,14 @@ export const notificationsApi = {
       body: { endpoint },
     });
   },
+  createTelegramLink() {
+    return api<{
+      alreadyLinked: boolean;
+      deepLink: string | null;
+      expiresAt: string | null;
+      botUsername: string;
+    }>('/notifications/telegram/link', { method: 'POST' });
+  },
   bindTelegram(token: string) {
     return api<{ ok: boolean }>('/notifications/telegram/bind', {
       method: 'POST',

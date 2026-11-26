@@ -231,8 +231,10 @@ model Bet {
 model TelegramLinkToken {
   id         String    @id @default(cuid())
   tokenHash  String    @unique
-  chatId     String
+  /// Set when bot creates a paste-code for a chat; null for site→bot deep links.
+  chatId     String?
   username   String?
+  /// Set when site creates a deep-link for a logged-in user.
   userId     String?
   expiresAt  DateTime
   consumedAt DateTime?
@@ -240,6 +242,7 @@ model TelegramLinkToken {
   user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([expiresAt, consumedAt])
+  @@index([userId, consumedAt])
 }
 
 model PaymentOrder {

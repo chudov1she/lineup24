@@ -55,6 +55,13 @@ export class NotificationsController {
 
   @ApiCookieAuth()
   @UseGuards(JwtAuthGuard)
+  @Post('telegram/link')
+  createTelegramLink(@CurrentUser() user: AuthUser) {
+    return this.notificationsService.createTelegramDeepLink(user.userId);
+  }
+
+  @ApiCookieAuth()
+  @UseGuards(JwtAuthGuard)
   @Post('telegram/bind')
   bindTelegram(@CurrentUser() user: AuthUser, @Body() dto: TelegramBindDto) {
     return this.notificationsService.bindTelegram(user.userId, dto.token);

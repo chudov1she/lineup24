@@ -221,7 +221,8 @@ export class AuthService {
       needsTosReaccept:
         user.tosVersion !== tosCurrentVersion ||
         user.privacyVersion !== privacyCurrentVersion,
-      telegramLinked: Boolean(user.telegramLinkedAt && user.telegramUsername),
+      // Username is optional in Telegram; chat link is enough.
+      telegramLinked: Boolean(user.telegramLinkedAt),
       emailChangePending: await this.getEmailChangePending(userId),
     };
   }

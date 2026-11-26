@@ -78,14 +78,71 @@ export class NotificationsService {
 
   async handleTelegramWebhook(update: TelegramUpdate) {
     const message = update.message;
-    if (!message?.text?.startsWith('/start')) {
+    const text = message?.text?.trim();
+    if (!text || !/^\/start(?:@\w+)?(?:\s|$)/.test(text)) {
       return { ok: true };
     }
 
-    const chatId = message.chat?.id;
+    const chatId = message?.chat?.id;
     if (chatId === undefined) {
       return { ok: true };
     }
+
+    const payload = text.replace(/^\/start(?:@\w+)?\s*/, '').trim();
+    if (payload) {
+      await this.completeDeepLinkBind(chatId, payload, message?.from?.username);
+      return { ok: true };
+    }
+
+    // Plain /start without payload — point to Settings QR/deep-link.
+    const frontendUrl = this.frontendBaseUrl();
+    const settingsUrl = `${frontendUrl}/dashboard/settings`;
+    await this.sendTelegramHtml(
+      chatId,
+      [
+        telegramBold('lineup24'),
+        '',
+        'Чтобы привязать Telegram:',
+        '1. Откройте Настройки в кабинете',
+        '2. Отсканируйте QR или нажмите «Открыть Telegram»',
+        '',
+        `Кабинет: ${telegramLink('Настройки', settingsUrl)}`,
+      ].join('\n'),
+      {
+        disable_web_page_preview: true,
+        ...this.telegramUrlButton('Открыть настройки', settingsUrl),
+      },
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Creates a one-time deep link: https://t.me/bot?start=TOKEN
+   * Opening it sends /start TOKEN to the bot and binds this user.
+   */
+  async createTelegramDeepLink(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.telegramLinkedAt && user.telegramChatId) {
+      return {
+        alreadyLinked: true as const,
+        deepLink: null,
+        expiresAt: null,
+        botUsername: this.botUsername(),
+      };
+    }
+
+    // Invalidate unused site-issued tokens for this user.
+    await this.prisma.telegramLinkToken.updateMany({
+      where: {
+        userId,
+        consumedAt: null,
+        chatId: null,
+      },
+      data: { consumedAt: new Date() },
+    });
 
     const token = randomBytes(24).toString('base64url');
     const tokenHash = createHash('sha256').update(token).digest('hex');
@@ -94,41 +151,25 @@ export class NotificationsService {
     await this.prisma.telegramLinkToken.create({
       data: {
         tokenHash,
-        chatId: String(chatId),
-        username: message.from?.username,
+        userId,
         expiresAt,
       },
     });
 
-    const botUsername = this.config.get<string>(
-      'TELEGRAM_BOT_USERNAME',
-      'lineup24_bot',
-    );
-    const frontendUrl = this.frontendBaseUrl();
-    // HTML parse_mode — safe for base64url tokens (unlike Markdown _).
-    const text = [
-      telegramBold('lineup24'),
-      '',
-      'Привязка Telegram к аккаунту.',
-      '',
-      'Ваш код:',
-      telegramCode(token),
-      '',
-      `Вставьте его в ${telegramBold('Настройки → Telegram')}.`,
-      'Код действует <b>30 минут</b>.',
-      '',
-      `Кабинет: ${telegramLink('открыть', `${frontendUrl}/dashboard/settings`)}`,
-      `Бот: @${escapeTelegramHtml(botUsername)}`,
-    ].join('\n');
+    const botUsername = this.botUsername();
+    const deepLink = `https://t.me/${botUsername}?start=${token}`;
 
-    await this.sendTelegramHtml(chatId, text, {
-      disable_web_page_preview: true,
-    });
-    return { ok: true };
+    return {
+      alreadyLinked: false as const,
+      deepLink,
+      expiresAt,
+      botUsername,
+    };
   }
 
+  /** Legacy paste-code bind (kept for API compat). Prefer deep-link. */
   async bindTelegram(userId: string, token: string) {
-    const cleaned = token.trim();
+    const cleaned = this.normalizeLinkToken(token);
     if (!cleaned) {
       throw new BadRequestException('Вставьте токен из бота');
     }
@@ -138,32 +179,20 @@ export class NotificationsService {
         tokenHash,
         consumedAt: null,
         expiresAt: { gt: new Date() },
+        chatId: { not: null },
       },
     });
-    if (!record) {
+    if (!record?.chatId) {
       throw new BadRequestException(
-        'Неверный или просроченный токен. Нажмите /start в боте и скопируйте новый код.',
+        'Неверный или просроченный токен. Откройте QR/ссылку из Настроек.',
       );
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      const consumed = await tx.telegramLinkToken.updateMany({
-        where: { id: record.id, consumedAt: null },
-        data: { consumedAt: new Date(), userId },
-      });
-      if (consumed.count === 0) {
-        throw new BadRequestException('Token already used');
-      }
-
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          telegramChatId: record.chatId,
-          telegramUsername: record.username ?? null,
-          telegramLinkedAt: new Date(),
-          telegramSignals: true,
-        },
-      });
+    await this.applyChatBind({
+      userId,
+      tokenId: record.id,
+      chatId: record.chatId,
+      username: record.username,
     });
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -171,29 +200,151 @@ export class NotificationsService {
       throw new NotFoundException('User not found');
     }
 
-    const chatId = Number(record.chatId);
-    if (Number.isFinite(chatId)) {
-      const settingsUrl = `${this.frontendBaseUrl()}/dashboard/settings`;
-      await this.sendTelegramHtml(
-        chatId,
-        [
-          telegramBold('Telegram привязан'),
-          '',
-          'Сигналы будут приходить сюда.',
-          `Управление: ${telegramLink('Настройки', settingsUrl)}`,
-        ].join('\n'),
-        {
-          disable_web_page_preview: true,
-          ...this.telegramUrlButton('Открыть настройки', settingsUrl),
-        },
-      );
-    }
+    await this.sendLinkedConfirmation(Number(record.chatId));
 
     return {
       linked: true,
       telegramUsername: user.telegramUsername,
       telegramLinkedAt: user.telegramLinkedAt,
     };
+  }
+
+  private async completeDeepLinkBind(
+    chatId: number,
+    rawToken: string,
+    username: string | undefined,
+  ) {
+    const token = this.normalizeLinkToken(rawToken);
+    if (!token) {
+      await this.sendTelegramHtml(
+        chatId,
+        'Ссылка неполная. Откройте QR или кнопку из Настроек ещё раз.',
+      );
+      return;
+    }
+
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const record = await this.prisma.telegramLinkToken.findFirst({
+      where: {
+        tokenHash,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+        userId: { not: null },
+      },
+    });
+
+    if (!record?.userId) {
+      const settingsUrl = `${this.frontendBaseUrl()}/dashboard/settings`;
+      await this.sendTelegramHtml(
+        chatId,
+        [
+          telegramBold('Ссылка устарела'),
+          '',
+          'Откройте Настройки и отсканируйте QR ещё раз.',
+          telegramLink('Настройки', settingsUrl),
+        ].join('\n'),
+        {
+          disable_web_page_preview: true,
+          ...this.telegramUrlButton('Открыть настройки', settingsUrl),
+        },
+      );
+      return;
+    }
+
+    try {
+      await this.applyChatBind({
+        userId: record.userId,
+        tokenId: record.id,
+        chatId: String(chatId),
+        username: username ?? null,
+      });
+    } catch (err) {
+      this.logger.warn(`Deep-link bind failed: ${String(err)}`);
+      await this.sendTelegramHtml(
+        chatId,
+        'Не удалось привязать. Обновите ссылку в Настройках и попробуйте снова.',
+      );
+      return;
+    }
+
+    await this.sendLinkedConfirmation(chatId);
+  }
+
+  private async applyChatBind(input: {
+    userId: string;
+    tokenId: string;
+    chatId: string;
+    username: string | null | undefined;
+  }) {
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.telegramLinkToken.updateMany({
+        where: { id: input.tokenId, consumedAt: null },
+        data: {
+          consumedAt: new Date(),
+          chatId: input.chatId,
+          username: input.username ?? null,
+          userId: input.userId,
+        },
+      });
+      if (consumed.count === 0) {
+        throw new BadRequestException('Token already used');
+      }
+
+      // One chat → one account: clear previous owner if any.
+      await tx.user.updateMany({
+        where: {
+          telegramChatId: input.chatId,
+          id: { not: input.userId },
+        },
+        data: {
+          telegramChatId: null,
+          telegramUsername: null,
+          telegramLinkedAt: null,
+          telegramSignals: false,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: input.userId },
+        data: {
+          telegramChatId: input.chatId,
+          telegramUsername: input.username ?? null,
+          telegramLinkedAt: new Date(),
+          telegramSignals: true,
+        },
+      });
+    });
+  }
+
+  private async sendLinkedConfirmation(chatId: number) {
+    if (!Number.isFinite(chatId)) return;
+    const settingsUrl = `${this.frontendBaseUrl()}/dashboard/settings`;
+    await this.sendTelegramHtml(
+      chatId,
+      [
+        telegramBold('Telegram привязан'),
+        '',
+        'Сигналы будут приходить сюда.',
+        `Управление: ${telegramLink('Настройки', settingsUrl)}`,
+      ].join('\n'),
+      {
+        disable_web_page_preview: true,
+        ...this.telegramUrlButton('Открыть настройки', settingsUrl),
+      },
+    );
+  }
+
+  private botUsername() {
+    return this.config.get<string>('TELEGRAM_BOT_USERNAME', 'lineup24_bot').trim()
+      || 'lineup24_bot';
+  }
+
+  private normalizeLinkToken(token: string) {
+    return token
+      .trim()
+      .replace(/^["'`]+|["'`]+$/g, '')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\s+/g, '');
   }
 
   async unbindTelegram(userId: string) {
