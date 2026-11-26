@@ -1,0 +1,109 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: project-lineup-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lineup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lineup}
+      POSTGRES_DB: ${POSTGRES_DB:-lineup}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lineup} -d ${POSTGRES_DB:-lineup}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: project-lineup-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+    container_name: project-lineup-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      PORT: 8000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lineup}:${POSTGRES_PASSWORD:-lineup}@db:5432/${POSTGRES_DB:-lineup}?schema=public
+      REDIS_URL: redis://redis:6379
+      # Public site URL (ngrok or localhost). Used for CORS, mail links, Platega return.
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # false on local http; true when exposed via https://*.ngrok*
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      RUN_SEED: ${RUN_SEED:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8000/api/payments/platega/webhook').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Relative /api → same origin (works with ngrok without rebuild)
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        API_PROXY_TARGET: http://backend:8000
+    container_name: project-lineup-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NODE_ENV: production
+      API_PROXY_TARGET: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:

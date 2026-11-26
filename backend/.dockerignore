@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.log
+.git
+README.md
+test
+**/*.spec.ts
+**/vitest.config*.ts

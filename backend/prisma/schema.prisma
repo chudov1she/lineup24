@@ -1,0 +1,310 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SubscriptionPlan {
+  BANK_BOOST
+  MONTHLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  COMPLETED
+  REVOKED
+}
+
+enum BetResult {
+  PENDING
+  WON
+  LOST
+}
+
+enum PaymentOrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum BroadcastAudience {
+  EMAIL_OPTED_IN
+  TELEGRAM_OPTED_IN
+  ACTIVE_SUBSCRIBERS
+  DIRECT_USER
+}
+
+model User {
+  id                   String              @id @default(cuid())
+  username             String              @unique
+  email                String              @unique
+  passwordHash         String
+  role                 Role                @default(USER)
+  avatarUrl            String?
+  emailVerifiedAt      DateTime?
+  blockedAt            DateTime?
+  tosAcceptedAt        DateTime?
+  tosVersion           String?
+  privacyAcceptedAt    DateTime?
+  privacyVersion       String?
+  emailSignals         Boolean             @default(true)
+  telegramSignals      Boolean             @default(false)
+  browserPushSignals   Boolean             @default(false)
+  telegramChatId       String?             @unique
+  telegramUsername     String?
+  telegramLinkedAt     DateTime?
+  lastActivityAt       DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  sessions             Session[]
+  emailVerifications   EmailVerification[]
+  emailChangeRequests  EmailChangeRequest[]
+  passwordResets       PasswordReset[]
+  legalAcceptances     LegalAcceptance[]
+  telegramLinkTokens   TelegramLinkToken[]
+  paymentOrders        PaymentOrder[]
+  auditLogs            AuditLog[]          @relation("AuditActor")
+  subscriptions        UserSubscription[]  @relation("UserSubscriptions")
+  grantedSubscriptions UserSubscription[]  @relation("GrantedSubscriptions")
+  bets                 Bet[]
+  broadcasts           Broadcast[]          @relation("BroadcastCreatedBy")
+  receivedBroadcasts   Broadcast[]          @relation("BroadcastRecipient")
+  pushSubscriptions    PushSubscription[]
+
+  @@index([blockedAt])
+  @@index([telegramChatId])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model LegalAcceptance {
+  id          String   @id @default(cuid())
+  userId      String
+  documentKey String
+  version     String
+  acceptedAt  DateTime @default(now())
+  ip          String?
+  userAgent   String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, documentKey])
+  @@index([documentKey, version])
+}
+
+model EmailVerification {
+  id         String    @id @default(cuid())
+  userId     String
+  code       String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@index([code])
+}
+
+model EmailChangeRequest {
+  id              String    @id @default(cuid())
+  userId          String
+  newEmail        String
+  oldCode         String
+  newCode         String?
+  oldVerifiedAt   DateTime?
+  consumedAt      DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+}
+
+model PasswordReset {
+  id         String    @id @default(cuid())
+  userId     String
+  code       String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@index([code])
+}
+
+model Session {
+  id                String    @id @default(cuid())
+  userId            String
+  refreshTokenHash  String
+  ip                String?
+  userAgent         String?
+  deviceFingerprint String?
+  macAddress        String?
+  platform          String?
+  deviceType        String?
+  createdAt         DateTime  @default(now())
+  lastSeenAt        DateTime  @default(now())
+  revokedAt         DateTime?
+  expiresAt         DateTime
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([refreshTokenHash])
+  @@index([ip])
+  @@index([deviceFingerprint])
+}
+
+model SubscriptionProduct {
+  code        SubscriptionPlan @id
+  title       String
+  priceRub    Int
+  description String?
+}
+
+model UserSubscription {
+  id              String             @id @default(cuid())
+  userId          String
+  plan            SubscriptionPlan
+  status          SubscriptionStatus @default(ACTIVE)
+  priceRubAtGrant Int
+  startsAt        DateTime
+  endsAt          DateTime?
+  bankStartRub    Int?
+  bankCurrentRub  Int?
+  bankTargetRub   Int?
+  completedAt     DateTime?
+  revokedAt       DateTime?
+  grantedById     String?
+  paymentOrderId  String?            @unique
+  createdAt       DateTime           @default(now())
+  user            User               @relation("UserSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy       User?              @relation("GrantedSubscriptions", fields: [grantedById], references: [id], onDelete: SetNull)
+  paymentOrder    PaymentOrder?      @relation(fields: [paymentOrderId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([status, endsAt])
+  @@index([plan, status])
+  @@index([createdAt])
+}
+
+model Bet {
+  id          String    @id @default(cuid())
+  title       String
+  forecast    String
+  odds        Decimal   @db.Decimal(10, 3)
+  score       String?
+  /// Аналитический комментарий к сигналу (опционально)
+  comment     String?
+  result      BetResult @default(PENDING)
+  publishedAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([publishedAt])
+  @@index([result, publishedAt])
+  @@index([createdById])
+}
+
+model TelegramLinkToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  chatId     String
+  username   String?
+  userId     String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt, consumedAt])
+}
+
+model PaymentOrder {
+  id                   String             @id @default(cuid())
+  userId               String
+  plan                 SubscriptionPlan
+  amountRub            Int
+  currency             String             @default("RUB")
+  plategaTransactionId String?            @unique
+  status               PaymentOrderStatus @default(PENDING)
+  paymentUrl           String?
+  rawMeta              Json?
+  paidAt               DateTime?
+  failedAt             DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription         UserSubscription?
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String?
+  entityId  String?
+  ip        String?
+  meta      Json?
+  createdAt DateTime @default(now())
+  actor     User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([entity, entityId])
+}
+
+model Broadcast {
+  id              String            @id @default(cuid())
+  title           String
+  body            String
+  audience        BroadcastAudience
+  createdById     String
+  recipientUserId String?
+  sentCount       Int               @default(0)
+  createdAt       DateTime          @default(now())
+  createdBy       User              @relation("BroadcastCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  recipientUser   User?             @relation("BroadcastRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([audience, createdAt])
+  @@index([recipientUserId])
+}
+
+/// Lightweight homepage (and allowlisted) unique visitor tracking per calendar day.
+model SiteVisit {
+  id         String   @id @default(cuid())
+  visitorKey String
+  path       String
+  day        DateTime @db.Date
+  createdAt  DateTime @default(now())
+
+  @@unique([visitorKey, path, day])
+  @@index([path, day])
+}

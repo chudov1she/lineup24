@@ -1,0 +1,15 @@
+{
+  "name": "24lineup",
+  "private": true,
+  "description": "lineup24 — Docker Compose stack (db, redis, backend, frontend)",
+  "scripts": {
+    "up": "docker compose up -d --build",
+    "down": "docker compose down",
+    "logs": "docker compose logs -f --tail=200",
+    "ps": "docker compose ps",
+    "seed": "docker compose exec backend node prisma/seed.mjs",
+    "tunnel": "powershell -ExecutionPolicy Bypass -File ./scripts/tunnel.ps1",
+    "db:up": "docker compose up -d db redis",
+    "db:down": "docker compose down"
+  }
+}

@@ -1,0 +1,40 @@
+# Dependencies & builds
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+!.env*.example
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Local / runtime junk
+*.db
+*.db-journal
+dump.rdb
+*.pem
+.turbo
+.cache/
+backend/cookies.txt
+backend/login.json
+backend/pageview.json
+*.http
+
+# Docker / compose overrides (local only)
+docker-compose.override.yml
