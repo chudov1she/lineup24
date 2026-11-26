@@ -1,11 +1,33 @@
-# Public reverse proxy → Next (which rewrites /api → Nest)
+# Caddy terminates TLS and splits traffic:
+# - /api (+ swagger) → Nest directly (needed for bets long-poll; Next rewrites buffer/timeout)
+# - everything else → Next
 lineup24.ru, www.lineup24.ru {
-	encode gzip zstd
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
-	reverse_proxy frontend:3000
+
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 65s
+				read_timeout 65s
+				write_timeout 65s
+			}
+		}
+	}
+
+	@docs path /docs /docs/* /docs-json /docs-yaml
+	handle @docs {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		encode gzip zstd
+		reverse_proxy frontend:3000
+	}
 }
