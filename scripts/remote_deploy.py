@@ -71,10 +71,14 @@ def sftp_put(client: paramiko.SSHClient, local: Path, remote: str) -> None:
 
 
 def backend_env() -> str:
+    db_pass = os.environ["LINEUP_DB_PASS"]
+    local_db = f"postgresql://lineup:{db_pass}@db:5432/lineup?schema=public"
+    socks = os.environ.get("LINEUP_TG_SOCKS", "")
     return f"""PORT=8000
 FRONTEND_URL=https://lineup24.ru
 COOKIE_SECURE=true
-DATABASE_URL=postgresql://lineup:{os.environ["LINEUP_DB_PASS"]}@db:5432/lineup?schema=public
+DATABASE_URL={local_db}
+DIRECT_URL={local_db}
 REDIS_URL=redis://redis:6379
 JWT_ACCESS_SECRET={os.environ["LINEUP_JWT_ACCESS"]}
 JWT_REFRESH_SECRET={os.environ["LINEUP_JWT_REFRESH"]}
@@ -89,6 +93,8 @@ TELEGRAM_BOT_USERNAME=lineup24_bot
 TELEGRAM_BOT_TOKEN={os.environ["LINEUP_TG_TOKEN"]}
 TELEGRAM_WEBHOOK_SECRET={os.environ["LINEUP_TG_WH_SECRET"]}
 TELEGRAM_MODE=polling
+TELEGRAM_WEBHOOK_URL=
+TELEGRAM_SOCKS_PROXY={socks}
 PLATEGA_MERCHANT_ID=
 PLATEGA_SECRET=
 PLATEGA_API_BASE=https://app.platega.io
